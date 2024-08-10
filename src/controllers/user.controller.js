@@ -6,10 +6,10 @@ import nodemailer from "nodemailer";
 export const login = async (req, res) => {
   try {
     const connection = connectToDB();
-    const { id, password } = req.body;
+    const { studentId, password } = req.body;
     connection.query(
       "SELECT * FROM user WHERE user_id = ?",
-      [id],
+      [studentId],
       async (err, result, fields) => {
         if (err) {
           return res.status(500).json({
@@ -17,9 +17,11 @@ export const login = async (req, res) => {
             message: "User does not exist in database. Register first !",
           });
         }
-
         // check if poasswords match
-        const isPasswordValid = await bcrypt.compare(password, user.password);
+        const isPasswordValid = await bcrypt.compare(
+          password,
+          result[0].password
+        );
         if (!isPasswordValid) {
           return res
             .status(401)
@@ -27,16 +29,19 @@ export const login = async (req, res) => {
         }
 
         // create token and store it in cookie
-        const token = jwt.sign({ id: user._id }, process.env.JWT_SECRET, {
-          expiresIn: "1w",
-        });
+        const token = jwt.sign(
+          { id: result[0].user_id },
+          process.env.JWT_SECRET,
+          {
+            expiresIn: "1w",
+          }
+        );
         res.cookie("session_token", token, {
           httpOnly: true,
           secure: process.env.NODE_ENV === "production",
           maxAge: 7 * 24 * 60 * 60 * 1000, // 1 week
         });
 
-        res.send("Logged in successfully");
         return res.status(200).json({
           ok: true,
           data: result[0],
@@ -57,10 +62,11 @@ export const verifyEmail = async (req, res) => {
     const decoded = jwt.verify(token, process.env.JWT_SECRET);
 
     const connection = connectToDB();
-    const [rows] = await connection.execute(
+    const rows = connection.query(
       "UPDATE user SET verified = true WHERE email = ?",
       [decoded.email]
     );
+    console.log("Rows : ", rows);
 
     if (rows.affectedRows === 0) {
       return res
@@ -81,16 +87,8 @@ export const verifyEmail = async (req, res) => {
 
 export const register = async (req, res) => {
   try {
+    console.log("Connecting to database...");
     const connection = connectToDB();
-    const transporter = nodemailer.createTransport({
-      host: "smtp.resend.com",
-      port: 465,
-      secure: true,
-      auth: {
-        user: "resend",
-        pass: process.env.RESEND_API_KEY,
-      },
-    });
 
     const {
       studentId,
@@ -106,7 +104,7 @@ export const register = async (req, res) => {
       role,
       description,
       imageUrl,
-      verified,
+      verified = false,
     } = req.body;
 
     if (password !== confirmPassword) {
@@ -115,16 +113,28 @@ export const register = async (req, res) => {
         .json({ ok: false, message: "Passwords do not match" });
     }
 
+    console.log("Hashing password...");
     const hashedPassword = await bcrypt.hash(password, 10);
 
+    console.log("Generating verification token...");
     const verificationToken = jwt.sign({ email }, process.env.JWT_SECRET, {
       expiresIn: "1h",
     });
 
     const verificationLink = `${process.env.FRONTEND_URL}/verifyEmail?token=${verificationToken}`;
 
+    const transporter = nodemailer.createTransport({
+      host: "smtp.resend.com",
+      port: 465,
+      secure: true,
+      auth: {
+        user: "resend",
+        pass: process.env.RESEND_API_KEY,
+      },
+    });
+
     const mailOptions = {
-      from: '"Hackalol" <onboarding@resend.dev>',
+      from: "onboarding@resend.dev",
       to: email,
       subject: "Verify Your Email",
       html: `
@@ -135,12 +145,19 @@ export const register = async (req, res) => {
       `,
     };
 
-    const info = await transporter.sendMail(mailOptions);
+    // Attempt to send the verification email
+    try {
+      const info = await transporter.sendMail(mailOptions);
+      console.log("Message sent: %s", info.messageId);
+    } catch (emailError) {
+      return res
+        .status(500)
+        .json({ ok: false, message: "Error sending verification email" });
+    }
 
-    console.log("Message sent: %s", info);
-
+    // Insert user into the database
     connection.query(
-      "INSERT INTO user VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
+      "INSERT INTO user (user_id, firstName, lastName, password, phone, email, year_level, faculty, gender, role, verified, description, imageUrl) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
       [
         studentId,
         firstName,
@@ -156,21 +173,48 @@ export const register = async (req, res) => {
         description,
         imageUrl,
       ],
-      (err, result, fields) => {
+      (err, result) => {
         if (err) {
-          return res.status(500).json({
-            ok: false,
-            message: "Error registering user",
-          });
+          return res
+            .status(500)
+            .json({ ok: false, message: "Error registering user" });
         }
         return res.status(201).json({
           ok: true,
-          message: "User registered successfully",
+          message:
+            "User registered successfully. Please check your email to verify your account.",
           token: verificationToken,
         });
       }
     );
   } catch (error) {
-    console.log("Error registering user: ", error);
+    return res
+      .status(500)
+      .json({ ok: false, message: "Internal server error" });
+  }
+};
+
+export const getUser = async (req, res) => {
+  try {
+    // get user from database
+    const connection = connectToDB();
+    connection.query(
+      "SELECT * FROM user WHERE user_id = ?",
+      [req.user.id],
+      (err, result) => {
+        if (err) {
+          return res.status(500).json({
+            ok: false,
+            message: "Error getting user",
+          });
+        }
+        return res.status(200).json({
+          ok: true,
+          user: result[0],
+        });
+      }
+    );
+  } catch (error) {
+    console.log("Error getting user: ", error);
   }
 };
