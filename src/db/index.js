@@ -3,6 +3,7 @@ import mysql from "mysql";
 export const connectToDB = () => {
   const db = mysql.createConnection({
     host: process.env.DB_HOST,
+    port: process.env.DB_PORT,
     user: process.env.DB_USER,
     password: process.env.DB_PASSWORD,
     database: process.env.DB_NAME,
@@ -15,6 +16,7 @@ export const connectToDB = () => {
     }
     console.log("Connected to database");
   });
+  return db;
 
   //   connection.query('SELECT 1 + 1 AS solution', (err, rows, fields) => {
   //     if (err) throw err

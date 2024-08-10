@@ -1,12 +1,11 @@
 import express from "express";
 import "dotenv/config";
 import { connectToDB } from "./db/index.js";
+import userRoutes from "./routes/user.route.js";
 
 const app = express();
 
-app.use("/api", (req, res) => {
-  res.send("Hello World");
-});
+app.use("/api", userRoutes);
 
 connectToDB();
 
