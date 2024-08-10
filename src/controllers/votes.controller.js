@@ -53,7 +53,7 @@ export const votes = async (req, res) => {
     res.status(500).json({ message: "Internal server error." });
   }
 };
-const castVote = async () => {
+export const castVote = async (req, res) => {
   const { votes } = req.body;
 
   if (!Array.isArray(votes) || votes.length === 0) {
