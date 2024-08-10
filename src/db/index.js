@@ -2,11 +2,18 @@ import mysql from "mysql";
 
 export const connectToDB = () => {
   const db = mysql.createConnection({
+<<<<<<< HEAD
     host: process.env.DB_HOST,
     port: process.env.DB_PORT,
     user: process.env.DB_USER,
     password: process.env.DB_PASSWORD,
     database: process.env.DB_NAME,
+=======
+    host: "localhost",
+    user: "root",
+    password: "admin",
+    database: "election",
+>>>>>>> roshan
   });
 
   db.connect((err) => {
@@ -17,6 +24,7 @@ export const connectToDB = () => {
     console.log("Connected to database");
   });
   return db;
+<<<<<<< HEAD
 
   //   connection.query('SELECT 1 + 1 AS solution', (err, rows, fields) => {
   //     if (err) throw err
@@ -25,4 +33,6 @@ export const connectToDB = () => {
   //   })
 
   //   connection.end()
+=======
+>>>>>>> roshan
 };
