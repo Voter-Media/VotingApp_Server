@@ -1,72 +1,104 @@
-import { connectToDB } from "../db/index.js";
-const hardcodedVotesData = [
-  { candidate_id: "U005", voter_id: "U001", vote_id: 12345 },
-];
+import { connection } from "../../src/server.js";
+
 export const votes = async (req, res) => {
-  // const { voterId, candidateId } = req.body;
-
-  const connection = connectToDB();
-
-  const { candidate_id, voter_id, vote_id } = hardcodedVotesData;
-
-  if (!candidate_id || !voter_id) {
-    return res
-      .status(400)
-      .json({ message: "Candidate ID and Voter ID are required." });
-  }
-
   try {
-    // Check if the voter has already voted
-    const voted = connection.query(
-      "SELECT voted FROM voters WHERE voter_id = ?",
-      [voter_id]
-    );
+    // Query to get vote counts along with candidate details
+    connection.query("SELECT * FROM candidate", async (err, results) => {
+      if (err) {
+        console.error("Error fetching voters:", err);
+        return res
+          .status(500)
+          .json({ ok: false, message: "Failed to fetch voters" });
+      }
 
-    if (voted.length === 0) {
-      return res.status(404).json({ message: "Voter not found." });
-    }
+      const candidates = await Promise.all(
+        results.map(
+          (candidate) =>
+            new Promise((resolve, reject) => {
+              connection.query(
+                "SELECT * FROM user WHERE user_id=?",
+                [candidate.user_id],
+                (err, candidates) => {
+                  if (err) {
+                    console.error("Error fetching candidates:", err);
+                    return reject(
+                      new Error("Failed to fetch user for candidate")
+                    );
+                  }
 
-    if (voted[0]) {
-      return res.status(400).json({ message: "You have already voted." });
-    }
+                  connection.query(
+                    "select count(*) as vote_count from vote where candidate_id = ?",
+                    [candidate.user_id],
+                    (err, voteCount) => {
+                      if (err) {
+                        console.error("Error fetching vote count:", err);
+                        return reject(
+                          new Error("Failed to fetch vote count for candidate")
+                        );
+                      }
 
-    // Insert vote into the vote table
-    connection.query(
-      "INSERT INTO vote (candidate_id, date, voter_id,vote_id) VALUES (?, NOW(), ?)",
-      [candidate_id, voter_id, vote_id]
-    );
+                      // Combine voter and user data
+                      const candidateData = {
+                        ...candidates[0],
+                        vote_count: voteCount[0],
+                      };
 
-    // Update the voter's voted status
-    connection.query("UPDATE voters SET voted = TRUE WHERE voter_id = ?", [
-      voter_id,
-    ]);
+                      resolve(candidateData);
+                    }
+                  );
 
-    // Optionally, update the candidate's vote count if a `votes` column exists
-    connection.query(
-      "UPDATE candidate SET votes = votes + 1 WHERE candidate_id = ?",
-      [candidate_id]
-    );
+                  // // Combine voter and user data
+                  // const voterData = {
+                  //   ...candidates[0],
+                  //   vote_count:
+                  // };
 
-    res.status(200).json({ message: "Vote successfully cast." });
+                  // resolve(voterData);
+                }
+              );
+            })
+        )
+      );
+
+      // Send the combined voters and users data as an array
+      return res.status(200).json({
+        ok: true,
+        data: candidates,
+      });
+    });
   } catch (err) {
     console.error(err);
-    res.status(500).json({ message: "Internal server error." });
+    return res.status(500).json({ message: "Internal server error." });
   }
 };
-const castVote = async () => {
-  const { votes } = req.body;
 
+export const castVote = async (req, res) => {
+  const { voteData: votes, voter_id } = req.body;
+
+  console.log("This is voter id ", voter_id);
+  console.log("This is votedata ", votes);
   if (!Array.isArray(votes) || votes.length === 0) {
     return res.status(400).json({ error: "No votes provided" });
   }
 
-  const connection = connectToDB();
+  connection.query(
+    "UPDATE voter SET voted=1 WHERE user_id=?",
+    [voter_id],
+    (err, results) => {
+      if (err) {
+        console.error("Error updating voter:", err);
+      }
+      console.log("This is query results", results);
+    }
+  );
 
   try {
     connection.beginTransaction();
 
     for (const vote of votes) {
       const { candidateId, voterId } = vote;
+
+      console.log("This is vote", vote);
 
       // Insert each vote into the database
       connection.query(
@@ -75,13 +107,50 @@ const castVote = async () => {
       );
     }
 
-    connection.connect();
-    res.status(200).json({ ok: true, message: "Votes submitted successfully" });
+    connection.commit();
+
+    return res
+      .status(200)
+      .json({ ok: true, message: "Votes submitted successfully" });
   } catch (error) {
     connection.rollback();
     console.error("Error submitting votes:", error);
-    res.status(500).json({ ok: false, error: "Failed to submit votes" });
-  } finally {
-    connection.release();
+  }
+};
+
+export const voteCount = async (req, res) => {
+  try {
+    connection.query(
+      `SELECT 
+         u.firstName, 
+         u.lastName, 
+         c.position, 
+         COUNT(v.candidate_id) AS vote_count
+       FROM vote v
+       JOIN candidate c ON v.candidate_id = c.candidate_id
+       JOIN user u ON c.user_id = u.user_id
+       GROUP BY u.firstName, u.lastName, c.position
+       ORDER BY vote_count DESC`,
+      (err, results) => {
+        if (err) {
+          console.error("Error fetching vote count:", err);
+          return res
+            .status(500)
+            .json({ ok: false, message: "Failed to fetch vote count" });
+        }
+
+        console.log("Vote count results: ", results);
+
+        return res.status(200).json({
+          ok: true,
+          data: results,
+        });
+      }
+    );
+  } catch (error) {
+    console.error("Error fetching vote count:", error);
+    return res
+      .status(500)
+      .json({ ok: false, message: "Failed to fetch vote count" });
   }
 };

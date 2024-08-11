@@ -1,11 +1,10 @@
-import { connectToDB } from "../db/index.js";
 import bcrypt from "bcryptjs";
 import jwt from "jsonwebtoken";
 import nodemailer from "nodemailer";
+import { connection } from "../server.js";
 
 export const login = async (req, res) => {
   try {
-    const connection = connectToDB();
     const { studentId, password } = req.body;
     connection.query(
       "SELECT * FROM user WHERE user_id = ?",
@@ -36,6 +35,7 @@ export const login = async (req, res) => {
             expiresIn: "1w",
           }
         );
+
         res.cookie("session_token", token, {
           httpOnly: true,
           secure: process.env.NODE_ENV === "production",
@@ -61,7 +61,6 @@ export const verifyEmail = async (req, res) => {
   try {
     const decoded = jwt.verify(token, process.env.JWT_SECRET);
 
-    const connection = connectToDB();
     const rows = connection.query(
       "UPDATE user SET verified = true WHERE email = ?",
       [decoded.email]
@@ -88,7 +87,6 @@ export const verifyEmail = async (req, res) => {
 export const register = async (req, res) => {
   try {
     console.log("Connecting to database...");
-    const connection = connectToDB();
 
     const {
       studentId,
@@ -102,10 +100,17 @@ export const register = async (req, res) => {
       faculty,
       level,
       role,
+      party,
+      position,
       description,
       imageUrl,
       verified = false,
     } = req.body;
+
+    // if (imageUrl) {
+    //   const uploadResponse = uploadHandler(imageUrl);
+    //   console.log("Upload response: ", uploadResponse);
+    // }
 
     if (password !== confirmPassword) {
       return res
@@ -116,48 +121,48 @@ export const register = async (req, res) => {
     console.log("Hashing password...");
     const hashedPassword = await bcrypt.hash(password, 10);
 
-    console.log("Generating verification token...");
     const verificationToken = jwt.sign({ email }, process.env.JWT_SECRET, {
       expiresIn: "1h",
     });
 
     const verificationLink = `${process.env.FRONTEND_URL}/verifyEmail?token=${verificationToken}`;
+    if (email === "awasthipawan175@gmail.com") {
+      console.log("Generating verification token...");
 
-    const transporter = nodemailer.createTransport({
-      host: "smtp.resend.com",
-      port: 465,
-      secure: true,
-      auth: {
-        user: "resend",
-        pass: process.env.RESEND_API_KEY,
-      },
-    });
-
-    const mailOptions = {
-      from: "onboarding@resend.dev",
-      to: email,
-      subject: "Verify Your Email",
-      html: `
-        <h1>Email Verification</h1>
-        <p>Please click the link below to verify your email address:</p>
-        <a href="${verificationLink}">Click here to Verify Email</a>
-        <p>This link will expire in 1 hour.</p>
-      `,
-    };
-
-    // Attempt to send the verification email
-    try {
-      const info = await transporter.sendMail(mailOptions);
-      console.log("Message sent: %s", info.messageId);
-    } catch (emailError) {
-      return res
-        .status(500)
-        .json({ ok: false, message: "Error sending verification email" });
+      const transporter = nodemailer.createTransport({
+        host: "smtp.resend.com",
+        port: 465,
+        secure: true,
+        auth: {
+          user: "resend",
+          pass: process.env.RESEND_API_KEY,
+        },
+      });
+      const mailOptions = {
+        from: "delivered@resend.dev",
+        to: email,
+        subject: "Verify Your Email",
+        html: `
+          <h1>Email Verification</h1>
+          <p>Please click the link below to verify your email address:</p>
+          <a href="${verificationLink}">Click here to Verify Email</a>
+          <p>This link will expire in 1 hour.</p>
+        `,
+      };
+      // Attempt to send the verification email
+      try {
+        const info = await transporter.sendMail(mailOptions);
+        console.log("Message sent: %s", info.messageId);
+      } catch (emailError) {
+        console.log("Email error: ", emailError);
+        return res
+          .status(500)
+          .json({ ok: false, message: "Error sending verification email" });
+      }
     }
 
-    // Insert user into the database
     connection.query(
-      "INSERT INTO user (user_id, firstName, lastName, password, phone, email, year_level, faculty, gender, role, verified, description, imageUrl) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
+      "INSERT INTO user (user_id, firstName, lastName, password, phone, email, year_level, faculty, gender, role, verified) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
       [
         studentId,
         firstName,
@@ -170,11 +175,10 @@ export const register = async (req, res) => {
         gender,
         role,
         verified,
-        description,
-        imageUrl,
       ],
       (err, result) => {
         if (err) {
+          console.log("Error registering user: ", err);
           return res
             .status(500)
             .json({ ok: false, message: "Error registering user" });
@@ -187,7 +191,38 @@ export const register = async (req, res) => {
         });
       }
     );
+
+    if (role === "candidate") {
+      connection.query(
+        "INSERT INTO candidate (user_id, position, description, party, imageUrl) VALUES (?, ?, ?, ?, ?)",
+        [studentId, position, description, party, imageUrl],
+        (err, result) => {
+          if (err) {
+            console.log("Error registering user: ", err);
+            return res
+              .status(500)
+              .json({ ok: false, message: "Error registering user" });
+          }
+        }
+      );
+    }
+
+    if (role === "voter") {
+      connection.query(
+        "INSERT INTO voter (user_id) VALUES (?)",
+        [studentId],
+        (err, result) => {
+          if (err) {
+            console.log("Error registering user: ", err);
+            return res
+              .status(500)
+              .json({ ok: false, message: "Error registering user" });
+          }
+        }
+      );
+    }
   } catch (error) {
+    console.log("Error registering user: ", error);
     return res
       .status(500)
       .json({ ok: false, message: "Internal server error" });
@@ -197,7 +232,6 @@ export const register = async (req, res) => {
 export const getUser = async (req, res) => {
   try {
     // get user from database
-    const connection = connectToDB();
     connection.query(
       "SELECT * FROM user WHERE user_id = ?",
       [req.user.id],
