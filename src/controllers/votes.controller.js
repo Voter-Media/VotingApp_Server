@@ -75,8 +75,6 @@ export const votes = async (req, res) => {
 export const castVote = async (req, res) => {
   const { voteData: votes, voter_id } = req.body;
 
-  console.log("This is voter id ", voter_id);
-  console.log("This is votedata ", votes);
   if (!Array.isArray(votes) || votes.length === 0) {
     return res.status(400).json({ error: "No votes provided" });
   }
@@ -88,7 +86,6 @@ export const castVote = async (req, res) => {
       if (err) {
         console.error("Error updating voter:", err);
       }
-      console.log("This is query results", results);
     }
   );
 
@@ -97,8 +94,6 @@ export const castVote = async (req, res) => {
 
     for (const vote of votes) {
       const { candidateId, voterId } = vote;
-
-      console.log("This is vote", vote);
 
       // Insert each vote into the database
       connection.query(
@@ -138,8 +133,6 @@ export const voteCount = async (req, res) => {
             .status(500)
             .json({ ok: false, message: "Failed to fetch vote count" });
         }
-
-        console.log("Vote count results: ", results);
 
         return res.status(200).json({
           ok: true,

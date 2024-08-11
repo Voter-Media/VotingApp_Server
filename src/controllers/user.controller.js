@@ -51,7 +51,7 @@ export const login = async (req, res) => {
       }
     );
   } catch (error) {
-    console.log("Error logging in user: ", error);
+    throw new Error(error);
   }
 };
 
@@ -65,7 +65,6 @@ export const verifyEmail = async (req, res) => {
       "UPDATE user SET verified = true WHERE email = ?",
       [decoded.email]
     );
-    console.log("Rows : ", rows);
 
     if (rows.affectedRows === 0) {
       return res
@@ -86,9 +85,7 @@ export const verifyEmail = async (req, res) => {
 
 export const register = async (req, res) => {
   try {
-    console.log("Connecting to database...");
-
-    const {
+    let {
       studentId,
       password,
       confirmPassword,
@@ -107,18 +104,12 @@ export const register = async (req, res) => {
       verified = false,
     } = req.body;
 
-    // if (imageUrl) {
-    //   const uploadResponse = uploadHandler(imageUrl);
-    //   console.log("Upload response: ", uploadResponse);
-    // }
-
     if (password !== confirmPassword) {
       return res
         .status(400)
         .json({ ok: false, message: "Passwords do not match" });
     }
 
-    console.log("Hashing password...");
     const hashedPassword = await bcrypt.hash(password, 10);
 
     const verificationToken = jwt.sign({ email }, process.env.JWT_SECRET, {
@@ -127,8 +118,6 @@ export const register = async (req, res) => {
 
     const verificationLink = `${process.env.FRONTEND_URL}/verifyEmail?token=${verificationToken}`;
     if (email === "awasthipawan175@gmail.com") {
-      console.log("Generating verification token...");
-
       const transporter = nodemailer.createTransport({
         host: "smtp.resend.com",
         port: 465,
@@ -151,15 +140,14 @@ export const register = async (req, res) => {
       };
       // Attempt to send the verification email
       try {
-        const info = await transporter.sendMail(mailOptions);
-        console.log("Message sent: %s", info.messageId);
+        await transporter.sendMail(mailOptions);
       } catch (emailError) {
-        console.log("Email error: ", emailError);
         return res
           .status(500)
           .json({ ok: false, message: "Error sending verification email" });
       }
     }
+    if (email !== "awasthipawan175@gmail.com") verified = true;
 
     connection.query(
       "INSERT INTO user (user_id, firstName, lastName, password, phone, email, year_level, faculty, gender, role, verified) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
@@ -178,7 +166,6 @@ export const register = async (req, res) => {
       ],
       (err, result) => {
         if (err) {
-          console.log("Error registering user: ", err);
           return res
             .status(500)
             .json({ ok: false, message: "Error registering user" });
@@ -198,7 +185,6 @@ export const register = async (req, res) => {
         [studentId, position, description, party, imageUrl],
         (err, result) => {
           if (err) {
-            console.log("Error registering user: ", err);
             return res
               .status(500)
               .json({ ok: false, message: "Error registering user" });
@@ -213,7 +199,6 @@ export const register = async (req, res) => {
         [studentId],
         (err, result) => {
           if (err) {
-            console.log("Error registering user: ", err);
             return res
               .status(500)
               .json({ ok: false, message: "Error registering user" });
@@ -222,7 +207,6 @@ export const register = async (req, res) => {
       );
     }
   } catch (error) {
-    console.log("Error registering user: ", error);
     return res
       .status(500)
       .json({ ok: false, message: "Internal server error" });
@@ -249,6 +233,6 @@ export const getUser = async (req, res) => {
       }
     );
   } catch (error) {
-    console.log("Error getting user: ", error);
+    throw new Error(error);
   }
 };

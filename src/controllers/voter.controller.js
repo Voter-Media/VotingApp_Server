@@ -29,16 +29,12 @@ export const getVoters = async (req, res) => {
                     voted: voter.voted,
                     voter_id: voter.voter_id,
                   };
-                  console.log("Voter data from server: ", voterData);
-
                   resolve(voterData);
                 }
               );
             })
         )
       );
-
-      console.log("Voters from server: ", voters);
       // Send the combined voters and users data as an array
       return res.status(200).json({
         ok: true,
